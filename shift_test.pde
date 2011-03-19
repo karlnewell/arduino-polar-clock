@@ -35,8 +35,8 @@ void clear_registers(){
 //Only call AFTER all values are set how you would like (slow otherwise)
 void write_registers(){
   digitalWrite(RCLK_Pin, LOW);
-  byte mask = B00000001;
   for(byte i = 0; i < num_regs; i++){
+    byte mask = B00000001;
     for (byte j = 0; j < 8; j++) {
       digitalWrite(SRCLK_Pin, LOW);
       digitalWrite(SER_Pin, registers[i] & mask ? HIGH : LOW);
