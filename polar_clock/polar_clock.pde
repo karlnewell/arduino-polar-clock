@@ -47,9 +47,9 @@
 #define SECONDS_SRCLK_PIN 10
 
 //How many of the shift registers are chained together in the seconds circuit
-#define SECONDS_NUM_REGS 1 
+#define SECONDS_NUM_REGS 2 
 //number of seconds pins which are actually wired up to LEDs
-#define SECONDS_NUM_LEDS 8
+#define SECONDS_NUM_LEDS 16
 //the frequency of the interrupt which will be generated from the square-wave output of the DS1307
 //changing this value does not change the frequency of the square-wave input! (see setup())
 #define TICK_RATE 4000
@@ -63,8 +63,12 @@ byte seconds_registers[SECONDS_NUM_REGS];
 byte seconds_current_reg = 0;
 //a bit-mask indicating which pin on the current seconds register will be the next to be lit up (see read_clock() and increment_time())
 byte seconds_current_pin = 0;
+//zero seconds is a special case where we allow all the LEDs to be off for one cycle. use this var to keep track of that case
+boolean at_zero_seconds = false;
 //calculate the number of LEDs to be lit every second (will be non-integer when number of LEDs is not divisible by 60!)
-float leds_per_second = (SECONDS_NUM_LEDS) / 60.0;
+float leds_per_second = (SECONDS_NUM_LEDS + 1) / 60.0;
+//keep track of the number of second LEDs list so we don't exceed the limit of SECONDS_NUM_LEDS
+byte seconds_num_leds_lit = 0;
 
 //keep track of the number of interrupts we've received from the square-wave input (rolls over to zero when ticks_per_update is reached)
 unsigned int ticks = 0;
@@ -97,7 +101,7 @@ void write_registers() {
 //write to seconds registers
 void write_seconds_registers() {
 	digitalWrite(SECONDS_RCLK_PIN, LOW);
-	for(byte i = 0; i < SECONDS_NUM_REGS; i++){
+	for(int i = SECONDS_NUM_REGS - 1; i >= 0; i--){
 		byte mask = B00000001;
 		for (byte j = 0; j < 8; j++) {
 			digitalWrite(SECONDS_SRCLK_PIN, LOW);
@@ -182,18 +186,26 @@ TODO
 */
 void increment_display() {
 	//increment seconds
-	seconds_registers[seconds_current_reg] = seconds_registers[seconds_current_reg] | seconds_current_pin;
-	if (seconds_current_pin == 0) {
-		seconds_current_pin = B10000000;
+	if (seconds_current_pin == 0 || seconds_num_leds_lit == SECONDS_NUM_LEDS) {
 		seconds_current_reg++;
-	}
-	else
-		seconds_current_pin = seconds_current_pin >> 1;
-	if (seconds_current_reg == SECONDS_NUM_REGS) {
-		clear_second_registers();
-		seconds_current_reg = 0;
-	}
+		seconds_current_pin = B10000000;
 
+		if (seconds_current_reg == SECONDS_NUM_REGS || seconds_num_leds_lit == SECONDS_NUM_LEDS) {
+			clear_second_registers();
+			seconds_current_reg = 0;
+			seconds_num_leds_lit = 0;
+		}
+		else {
+			seconds_registers[seconds_current_reg] = seconds_registers[seconds_current_reg] | seconds_current_pin;
+			seconds_current_pin = seconds_current_pin >> 1;
+			seconds_num_leds_lit++;
+		}
+	}
+	else {
+		seconds_registers[seconds_current_reg] = seconds_registers[seconds_current_reg] | seconds_current_pin;
+		seconds_current_pin = seconds_current_pin >> 1;
+		seconds_num_leds_lit++;
+	}
 	write_registers();
 }
 
@@ -202,10 +214,13 @@ void read_clock() {
 
 	//load the time information into the local data structures
 	//calculate the number of seconds LEDs that should be on
-	//by adding 0.5, we are effectively rounding pins_on to nearest integer instead of just truncating
+	//by adding 0.5, we are effectively rounding seconds_num_leds_lit to nearest integer instead of just truncating
 	//TODO investigate the error in this calculation as the number of LEDs is scaled up (floats are only accurate to ~6 digits on arduino)
-	byte pins_on = leds_per_second * second + 0.5;
-	seconds_current_reg = pins_on / 8;
+	seconds_num_leds_lit = leds_per_second * second + 0.5;
+	if (seconds_num_leds_lit == 0)
+		at_zero_seconds = true;
+
+	seconds_current_reg = seconds_num_leds_lit / 8;
 	byte i, j;
 	for (i = 0; i < SECONDS_NUM_REGS; i++) {
 		if (i < seconds_current_reg)
@@ -214,8 +229,7 @@ void read_clock() {
 			seconds_registers[i] = B00000000;
 	}
 	seconds_current_pin = B10000000;
-	pins_on = pins_on % 8;
-	for (j = 0; j < pins_on; j++) {
+	for (j = 0; j < (seconds_num_leds_lit % 8); j++) {
 		seconds_registers[seconds_current_reg] = seconds_registers[seconds_current_reg] | seconds_current_pin;
 		seconds_current_pin = seconds_current_pin >> 1;
 	}
@@ -233,6 +247,9 @@ void setup() {
 	pinMode(SECONDS_RCLK_PIN, OUTPUT);
 	pinMode(SECONDS_SRCLK_PIN, OUTPUT);
 
+	//read the time off of the rtc chip and into our local data structures
+	read_clock();
+
 	//initialize the 4kHz square-wave output from the DS1307
 	pinMode(ISRPIN, INPUT);
 	// pull-up ISRPIN (see DS1307 datasheet)
@@ -244,9 +261,6 @@ void setup() {
 	set_single_register(DS1307_HI_SEC, secs | DS1307_CLOCKHALT);
 	set_single_register(DS1307_CTRLREG, DS1307_4KHZ);	
 	set_single_register(DS1307_HI_SEC, secs);
-
-	//read the time off of the rtc chip
-	read_clock();
 }
 
 void loop() {
