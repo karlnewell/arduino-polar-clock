@@ -47,12 +47,12 @@
 #define SECONDS_SRCLK_PIN 10
 
 //How many of the shift registers are chained together in the seconds circuit
-#define SECONDS_NUM_REGS 2 
+#define SECONDS_NUM_REGS 8 
 //number of seconds pins which are actually wired up to LEDs
-#define SECONDS_NUM_LEDS 16
+#define SECONDS_NUM_LEDS 59
 //the frequency of the interrupt which will be generated from the square-wave output of the DS1307
 //changing this value does not change the frequency of the square-wave input! (see setup())
-#define TICK_RATE 4000
+#define TICK_RATE 4096
 
 //total number of pins which we need to set on or off
 byte seconds_num_pins = SECONDS_NUM_REGS * 8;
@@ -65,13 +65,13 @@ byte seconds_current_reg = 0;
 byte seconds_current_pin = 0;
 //zero seconds is a special case where we allow all the LEDs to be off for one cycle. use this var to keep track of that case
 boolean at_zero_seconds = false;
-//calculate the number of LEDs to be lit every second (will be non-integer when number of LEDs is not divisible by 60!)
+//calculate the number of LEDs to be lit per second (will be non-integer when number of LEDs + 1 is not divisible by 60!)
 float leds_per_second = (SECONDS_NUM_LEDS + 1) / 60.0;
 //keep track of the number of second LEDs list so we don't exceed the limit of SECONDS_NUM_LEDS
 byte seconds_num_leds_lit = 0;
 
 //keep track of the number of interrupts we've received from the square-wave input (rolls over to zero when ticks_per_update is reached)
-unsigned int ticks = 0;
+volatile unsigned int ticks = 0;
 //calculate number of ticks before the seconds display updates, round to nearest integer
 unsigned int ticks_per_update = TICK_RATE / leds_per_second + 0.5;
 
