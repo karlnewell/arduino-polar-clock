@@ -182,7 +182,6 @@ void tick() {
 /*
 TODO
 - cascading updates to time variables: every x seconds, update minutes; every y minutes update hours, etc. (only keep track of seconds at 4kHz resolution)
-- the clock is running slow with 59 LEDs, which implies that we're missing some of the interrupts due to increment display taking too long
 */
 void increment_display() {
 	//increment seconds
