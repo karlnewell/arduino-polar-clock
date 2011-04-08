@@ -38,7 +38,7 @@
 
 #define DS1307_I2C_ADDRESS 0x68
 //the digital pin on which we will receive the square-wave input
-//should be set to 2 or 3 as those are the pins that the arduino can catch interrupts on
+//should be set to 2 or 3 as those are the pins that the arduino can generate interrupts from
 #define ISRPIN 2
 
 //the analog output pins through which we will communicate with the shift registers controlling the seconds LEDs
@@ -56,15 +56,12 @@
 
 //total number of pins which we need to set on or off
 byte seconds_num_pins = SECONDS_NUM_REGS * 8;
-
 //define data structures to keep track of pin settings
 byte seconds_registers[SECONDS_NUM_REGS];
 //an integer indicating how far into the seconds register chain we are (see read_clock() and increment_time())
 byte seconds_current_reg = 0;
 //a bit-mask indicating which pin on the current seconds register will be the next to be lit up (see read_clock() and increment_time())
 byte seconds_current_pin = 0;
-//zero seconds is a special case where we allow all the LEDs to be off for one cycle. use this var to keep track of that case
-boolean at_zero_seconds = false;
 //calculate the number of LEDs to be lit per second (will be non-integer when number of LEDs + 1 is not divisible by 60!)
 float leds_per_second = (SECONDS_NUM_LEDS + 1) / 60.0;
 //keep track of the number of second LEDs list so we don't exceed the limit of SECONDS_NUM_LEDS
@@ -78,8 +75,8 @@ unsigned int ticks_per_update = TICK_RATE / leds_per_second + 0.5;
 //vars to store the time as it's read from the rtc
 byte second, minute, hour, day_of_week, day_of_month, month, year = 0;
 
-//this will be set to true each time the square wave output voltage rises (see tick())
-volatile boolean clock_ticked = false;
+//this will be set to true each time ticks rolls over to 0 (see tick(), loop())
+volatile boolean update_display = false;
 
 //set all registers to LOW
 void clear_registers() {
@@ -177,12 +174,15 @@ void set_single_register(byte reg, byte b) {
 }
 
 void tick() {
-	clock_ticked = true;
+	ticks = (ticks + 1) % ticks_per_update;
+	if (ticks == 0)
+		update_display = true;
 }
 
 /*
 TODO
 - cascading updates to time variables: every x seconds, update minutes; every y minutes update hours, etc. (only keep track of seconds at 4kHz resolution)
+- the clock is running slow with 59 LEDs, which implies that we're missing some of the interrupts due to increment display taking too long
 */
 void increment_display() {
 	//increment seconds
@@ -217,8 +217,6 @@ void read_clock() {
 	//by adding 0.5, we are effectively rounding seconds_num_leds_lit to nearest integer instead of just truncating
 	//TODO investigate the error in this calculation as the number of LEDs is scaled up (floats are only accurate to ~6 digits on arduino)
 	seconds_num_leds_lit = leds_per_second * second + 0.5;
-	if (seconds_num_leds_lit == 0)
-		at_zero_seconds = true;
 
 	seconds_current_reg = seconds_num_leds_lit / 8;
 	byte i, j;
@@ -254,7 +252,7 @@ void setup() {
 	pinMode(ISRPIN, INPUT);
 	// pull-up ISRPIN (see DS1307 datasheet)
 	digitalWrite(ISRPIN, HIGH); 
-	// set external interrupt for 4kHz interruption
+	// set external interrupt
 	attachInterrupt(ISRPIN - 2, tick, RISING);
 	//set ctrl register for 4kHz output
 	byte secs = get_single_register(DS1307_HI_SEC);
@@ -264,10 +262,8 @@ void setup() {
 }
 
 void loop() {
-	if (!clock_ticked)
-		return;
-	clock_ticked = false;
-	ticks = (ticks + 1) % ticks_per_update;
-	if (ticks == 0)
+	if (update_display) {
+		update_display = false;
 		increment_display();
+	}
 }
