@@ -52,7 +52,7 @@
 #define SECONDS_NUM_LEDS 59
 //the frequency of the interrupt which will be generated from the square-wave output of the DS1307
 //changing this value does not change the frequency of the square-wave input! (see setup())
-#define TICK_RATE 4096
+#define TICK_RATE 2
 
 //total number of pins which we need to set on or off
 byte seconds_num_pins = SECONDS_NUM_REGS * 8;
@@ -181,7 +181,7 @@ void tick() {
 
 /*
 TODO
-- cascading updates to time variables: every x seconds, update minutes; every y minutes update hours, etc. (only keep track of seconds at 4kHz resolution)
+- cascading updates to time variables: every x seconds, update minutes; every y minutes update hours, etc. (only keep track of seconds at 2Hz resolution)
 */
 void increment_display() {
 	//increment seconds
@@ -247,16 +247,16 @@ void setup() {
 	//read the time off of the rtc chip and into our local data structures
 	read_clock();
 
-	//initialize the 4kHz square-wave output from the DS1307
+	//initialize the 1Hz square-wave output from the DS1307
 	pinMode(ISRPIN, INPUT);
 	// pull-up ISRPIN (see DS1307 datasheet)
 	digitalWrite(ISRPIN, HIGH); 
-	// set external interrupt
-	attachInterrupt(ISRPIN - 2, tick, RISING);
-	//set ctrl register for 4kHz output
+	// set external interrupt to fire when voltage changes (interrupt will be 2Hz)
+	attachInterrupt(ISRPIN - 2, tick, CHANGE);
+	//set ctrl register for 1Hz output
 	byte secs = get_single_register(DS1307_HI_SEC);
 	set_single_register(DS1307_HI_SEC, secs | DS1307_CLOCKHALT);
-	set_single_register(DS1307_CTRLREG, DS1307_4KHZ);	
+	set_single_register(DS1307_CTRLREG, DS1307_1HZ);	
 	set_single_register(DS1307_HI_SEC, secs);
 }
 
